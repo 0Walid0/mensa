@@ -37,7 +37,7 @@ def init_all():
     if not os.path.exists(UTENTI_FILE):
         pd.DataFrame([
             {'User': 'Admin', 'Password': '123', 'Email': '', 'Ruolo': 'Admin'},
-            {'User': 'Walid Khoury', 'Password': '456', 'Email': '', 'Ruolo': 'User'}
+            {'User': 'walid.ouakili', 'Password': '456', 'Email': '', 'Ruolo': 'User'}
         ]).to_csv(UTENTI_FILE, index=False)
 
 init_all()
