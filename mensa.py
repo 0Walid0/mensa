@@ -99,36 +99,53 @@ else:
 
     tabs = st.tabs(["📝 Ordini", "🛡️ Admin", "👨‍🍳 Ristorante"])
 
-    # --- TAB ORDINI ---
+# --- TAB ORDINI ---
     with tabs[0]:
         if st.session_state.ruolo in ['User', 'Admin']:
             s = pd.read_csv(SETTINGS_FILE).iloc[0]
+            m = pd.read_csv(MENU_FILE)
+            g = st.selectbox("Seleziona Giorno", m['Giorno'].tolist())
+            dati = m[m['Giorno'] == g].iloc[0]
+            iniziali = get_iniziali(st.session_state.user)
+
             if not s['sblocco_manuale']:
-                st.error("🚫 Menu Chiuso.")
-                if st.button("🔔 Richiedi apertura"):
-                    sd = pd.read_csv(SETTINGS_FILE)
-                    sd.at[0, 'richiesta_apertura'] = True
-                    sd.to_csv(SETTINGS_FILE, index=False)
-                    st.info("Richiesta inviata.")
+                st.error("🚫 Il sistema di invio interno è chiuso.")
+                st.info("Puoi comunque comporre il tuo ordine e inviarlo via WhatsApp al ristorante.")
+                
+                # Form per WhatsApp quando il menu è chiuso
+                with st.container():
+                    c1, c2 = st.columns(2)
+                    p_w = c1.selectbox("Principale", dati['Principale'].split(','), key="p_w")
+                    c_w = c1.selectbox("Contorno", dati['Contorno'].split(','), key="c_w")
+                    do_w = c2.selectbox("Dolce", dati['Dolce'].split(','), key="do_w")
+                    b_w = c2.selectbox("Bevanda", dati['Bevanda'].split(','), key="b_w")
+                    
+                    testo_wa = f"*ORDINE MENÙ* ({g})\n*Dipendente:* {st.session_state.user} ({iniziali})\n----------\n🍜 *Primo:* {p_w}\n🥗 *Contorno:* {c_w}\n🍰 *Dolce:* {do_w}\n🥤 *Bevanda:* {b_w}"
+                    link_wa = f"https://wa.me/39333000000?text={urllib.parse.quote(testo_wa)}" # Sostituisci numero
+                    
+                    st.markdown(f"""
+                        <a href="{link_wa}" target="_blank" style="text-decoration: none;">
+                            <div style="background-color: #25D366; color: white; padding: 10px; border-radius: 5px; text-align: center; font-weight: bold;">
+                                📲 INVIA ORDINE VIA WHATSAPP
+                            </div>
+                        </a>
+                    """, unsafe_allow_html=True)
             else:
-                m = pd.read_csv(MENU_FILE)
-                g = st.selectbox("Giorno", m['Giorno'].tolist())
-                dati = m[m['Giorno'] == g].iloc[0]
-                with st.form("ord"):
+                # Menu Aperto: Invio normale al database
+                st.success("✅ Il menu è aperto. Puoi registrare l'ordine nel sistema.")
+                with st.form("ord_interno"):
                     c1, c2 = st.columns(2)
                     p = c1.selectbox("Principale", dati['Principale'].split(','))
                     c = c1.selectbox("Contorno", dati['Contorno'].split(','))
                     do = c2.selectbox("Dolce", dati['Dolce'].split(','))
                     b = c2.selectbox("Bevanda", dati['Bevanda'].split(','))
-                    if st.form_submit_button("Ordina"):
+                    if st.form_submit_button("Registra Ordine nel Portale"):
                         o = pd.read_csv(ORDINI_FILE)
                         o = o[~((o['Giorno'] == g) & (o['User'] == st.session_state.user))]
                         det = f"{p}|{c}|{do}|{b}"
-                        new = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d"), g, st.session_state.user, get_iniziali(st.session_state.user), det]], columns=o.columns)
+                        new = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d"), g, st.session_state.user, iniziali, det]], columns=o.columns)
                         pd.concat([o, new]).to_csv(ORDINI_FILE, index=False)
-                        st.success("Fatto!")
-                        link = urllib.parse.quote(f"Ordine {g}: {det}")
-                        st.markdown(f"[📲 WhatsApp Ristorante](https://wa.me/39333000000?text={link})")
+                        st.success("Ordine registrato correttamente nel database!")
 
     # --- TAB ADMIN ---
     with tabs[1]:
