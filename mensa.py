@@ -114,7 +114,7 @@ else:
             
             # Formattazione messaggio con controllo giorno
             t_wa = f"*ORDINE MENSA* \n*Giorno:* {g}\n*Dipendente:* {st.session_state.user} ({get_iniziali(st.session_state.user)})\n----------\n🍜 *Primo:* {p_w}\n🥗 *Contorno:* {c_w}\n🍰 *Dolce:* {do_w}\n🥤 *Bevanda:* {b_w}\n📝 *Note:* {n_w}"
-            l_wa = f"https://wa.me/39333000000?text={urllib.parse.quote(t_wa)}"
+            l_wa = f"https://wa.me/3381161485?text={urllib.parse.quote(t_wa)}"
             
             st.markdown(f'<a href="{l_wa}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366;color:white;padding:15px;border-radius:10px;text-align:center;font-weight:bold;font-size:18px;">📲 INVIA ORDINE {g.upper()} VIA WHATSAPP</div></a>', unsafe_allow_html=True)
         else:
