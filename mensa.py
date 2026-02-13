@@ -15,7 +15,7 @@ SETTINGS_FILE = "settings.csv"
 # --- CONFIGURAZIONE EMAIL (LIBRAESVA) ---
 # Sostituisci con i tuoi dati reali
 SMTP_SERVER = "securemail04.netx64.cloud" 
-SMTP_PORT = 587
+SMTP_PORT = 25
 EMAIL_MITTENTE = "relaynetx64" 
 PASS_EMAIL = "3(aw&nBQyiPn8ab4" 
 
