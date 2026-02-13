@@ -15,10 +15,10 @@ SETTINGS_FILE = "settings.csv"
 
 # --- CONFIGURAZIONE EMAIL (PARAMETRI LIBRAESVA) ---
 # Inserisci qui i dati del tuo pannello Libraesva
-SMTP_SERVER = "INSERISCI_IP_O_FQDN_LIBRAESVA" 
+SMTP_SERVER = "securemail04.netx64.cloud" 
 SMTP_PORT = 587
-EMAIL_MITTENTE = "IL_TUO_USERNAME_LIBRAESVA" 
-PASS_EMAIL = "LA_TUA_PASSWORD_LIBRAESVA" 
+EMAIL_MITTENTE = "relaynetx64" 
+PASS_EMAIL = "3(aw&nBQyiPn8ab4" 
 
 # --- INIZIALIZZAZIONE ---
 def init_all():
