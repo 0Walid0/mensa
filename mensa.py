@@ -1,158 +1,185 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, time
+from datetime import datetime
 import os
-import pytz # Per orario italiano
+import pytz
+import smtplib
+from email.mime.text import MIMEText
+import urllib.parse
 
-# --- CONFIGURAZIONE ---
+# --- CONFIGURAZIONE FILE ---
 MENU_FILE = "menu_settimanale.csv"
 ORDINI_FILE = "ordini_storico.csv"
 UTENTI_FILE = "database_utenti.csv"
 SETTINGS_FILE = "settings.csv"
 
-# --- 1. INIZIALIZZAZIONE ---
+# --- CONFIGURAZIONE EMAIL ---
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+EMAIL_MITTENTE = "tua_email@gmail.com" 
+PASS_EMAIL = "xxxx xxxx xxxx xxxx" 
+
+# --- INIZIALIZZAZIONE ---
 def init_all():
     if not os.path.exists(MENU_FILE):
         giorni = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì']
-        pd.DataFrame({
-            'Giorno': giorni,
-            'Principale': ['Pasta, Riso'] * 5, 'Contorno': ['Insalata, Patate'] * 5,
-            'Dolce': ['Frutta, Torta'] * 5, 'Bevanda': ['Acqua, Bibita'] * 5
-        }).to_csv(MENU_FILE, index=False)
+        pd.DataFrame({'Giorno': giorni, 'Principale': '', 'Contorno': '', 'Dolce': '', 'Bevanda': ''}).to_csv(MENU_FILE, index=False)
     
     if not os.path.exists(ORDINI_FILE):
         pd.DataFrame(columns=['Data', 'Giorno', 'User', 'Iniziali', 'Dettaglio']).to_csv(ORDINI_FILE, index=False)
 
     if not os.path.exists(UTENTI_FILE):
         pd.DataFrame([
-            {'User': 'Admin', 'Password': '123', 'Ruolo': 'Admin'},
-            {'User': 'walid.ouakili', 'Password': '456', 'Ruolo': 'User'},
-            {'User': 'Ristorante', 'Password': '789', 'Ruolo': 'Ristorante'}
+            {'User': 'Admin', 'Password': '123', 'Email': '', 'Ruolo': 'Admin', 'PrimoAccesso': False},
+            {'User': 'walid.ouakili', 'Password': '456', 'Email': '', 'Ruolo': 'User', 'PrimoAccesso': True},
+            {'User': 'Ristorante', 'Password': '789', 'Email': '', 'Ruolo': 'Ristorante', 'PrimoAccesso': False}
         ]).to_csv(UTENTI_FILE, index=False)
         
     if not os.path.exists(SETTINGS_FILE):
-        pd.DataFrame([{'chiusura': '10:30', 'sblocco_manuale': False}]).to_csv(SETTINGS_FILE, index=False)
+        pd.DataFrame([{'chiusura': '10:30', 'sblocco_manuale': False, 'richiesta_apertura': False}]).to_csv(SETTINGS_FILE, index=False)
 
 init_all()
 
-# --- UTILITY ---
+# --- FUNZIONI CORE ---
+def invia_email_menu(testo_menu):
+    u_db = pd.read_csv(UTENTI_FILE)
+    destinatari = u_db[(u_db['Email'] != '') & (u_db['Email'].notna())]['Email'].tolist()
+    if not destinatari: return
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(EMAIL_MITTENTE, PASS_EMAIL)
+        msg = MIMEText(f"Il ristorante ha aggiornato il menu:\n\n{testo_menu}")
+        msg['Subject'] = "🍴 Nuovo Menu Mensa Disponibile"
+        msg['From'] = EMAIL_MITTENTE
+        msg['To'] = ", ".join(destinatari)
+        server.sendmail(EMAIL_MITTENTE, destinatari, msg.as_string())
+        server.quit()
+        st.success("Notifiche email inviate!")
+    except Exception as e:
+        st.error(f"Errore email: {e}")
+
 def get_iniziali(nome):
-    parti = nome.replace('.', ' ').split()
-    return f"{parti[0][0].upper()}.{parti[1][0].upper()}." if len(parti) >= 2 else nome[:2].upper()
+    parti = str(nome).replace('.', ' ').split()
+    return f"{parti[0][0].upper()}.{parti[1][0].upper()}." if len(parti) >= 2 else str(nome)[:2].upper()
 
-def is_ordine_aperto():
-    settings = pd.read_csv(SETTINGS_FILE).iloc[0]
-    if settings['sblocco_manuale']: return True
-    tz = pytz.timezone('Europe/Rome')
-    ora_attuale = datetime.now(tz).time()
-    ora_limite = datetime.strptime(settings['chiusura'], "%H:%M").time()
-    return ora_attuale < ora_limite
-
-# --- LOGIN ---
+# --- LOGICA DI ACCESSO ---
 u_db = pd.read_csv(UTENTI_FILE)
-u_db['User'] = u_db['User'].astype(str).str.strip()
-u_db['Password'] = u_db['Password'].astype(str).str.strip()
-
 if 'auth' not in st.session_state: st.session_state.auth = False
 
 if not st.session_state.auth:
-    st.title("🍴 Sistema Mensa Integrato")
-    u_sel = st.selectbox("Utente", [""] + u_db['User'].tolist())
+    st.title("🍴 Portale Mensa Aziendale")
+    u_sel = st.selectbox("Seleziona Utente", [""] + u_db['User'].tolist())
     p_sel = st.text_input("Password", type="password")
     if st.button("Accedi"):
-        user_row = u_db[(u_db['User'] == u_sel) & (u_db['Password'] == p_sel)]
-        if not user_row.empty:
-            st.session_state.auth, st.session_state.user, st.session_state.ruolo = True, u_sel, user_row.iloc[0]['Ruolo']
+        row = u_db[(u_db['User'] == u_sel) & (u_db['Password'].astype(str) == str(p_sel))]
+        if not row.empty:
+            st.session_state.auth, st.session_state.user, st.session_state.ruolo = True, u_sel, row.iloc[0]['Ruolo']
+            st.session_state.primo = row.iloc[0]['PrimoAccesso']
             st.rerun()
-        else: st.error("Credenziali errate")
+        else: st.error("Credenziali non corrette")
 else:
+    # --- PROFILO PRIMO ACCESSO ---
+    if st.session_state.primo and st.session_state.ruolo == 'User':
+        st.warning("🔒 Configura il tuo profilo per continuare")
+        with st.form("setup"):
+            mail = st.text_input("Email Aziendale")
+            pw = st.text_input("Nuova Password", type="password")
+            if st.form_submit_button("Salva Profilo"):
+                u_db.loc[u_db['User'] == st.session_state.user, ['Email', 'Password', 'PrimoAccesso']] = [mail, pw, False]
+                u_db.to_csv(UTENTI_FILE, index=False)
+                st.session_state.primo = False
+                st.rerun()
+        st.stop()
+
     st.sidebar.title(f"👤 {st.session_state.user}")
     if st.sidebar.button("Logout"): 
         st.session_state.auth = False
         st.rerun()
 
-    # --- LOGICA TAB PER RUOLO ---
-    if st.session_state.ruolo == 'User':
-        tabs = st.tabs(["📝 Prenota Pasto"])
-    elif st.session_state.ruolo == 'Admin':
-        tabs = st.tabs(["📝 Prenota Pasto", "🛡️ Amministrazione", "👨‍🍳 Cucina"])
-    else: # Ristorante
-        tabs = st.tabs(["👨‍🍳 Cucina"])
+    tabs = st.tabs(["📝 Ordini", "🛡️ Admin", "👨‍🍳 Ristorante"])
 
-    # --- TAB ORDINE (Solo User e Admin) ---
-    if st.session_state.ruolo in ['User', 'Admin']:
-        with tabs[0]:
-            if not is_ordine_aperto() and st.session_state.ruolo != 'Admin':
-                st.warning("⚠️ Ordini chiusi per oggi.")
+    # --- TAB ORDINI ---
+    with tabs[0]:
+        if st.session_state.ruolo in ['User', 'Admin']:
+            s = pd.read_csv(SETTINGS_FILE).iloc[0]
+            if not s['sblocco_manuale']:
+                st.error("🚫 Menu Chiuso.")
+                if st.button("🔔 Richiedi apertura"):
+                    sd = pd.read_csv(SETTINGS_FILE)
+                    sd.at[0, 'richiesta_apertura'] = True
+                    sd.to_csv(SETTINGS_FILE, index=False)
+                    st.info("Richiesta inviata.")
             else:
-                st.header("Compila il tuo ordine")
-                menu_df = pd.read_csv(MENU_FILE)
-                g_scelto = st.selectbox("Giorno", menu_df['Giorno'].tolist())
-                dati = menu_df[menu_df['Giorno'] == g_scelto].iloc[0]
-                with st.form("f_ordine"):
+                m = pd.read_csv(MENU_FILE)
+                g = st.selectbox("Giorno", m['Giorno'].tolist())
+                dati = m[m['Giorno'] == g].iloc[0]
+                with st.form("ord"):
                     c1, c2 = st.columns(2)
-                    p = c1.radio("Principale", dati['Principale'].split(', '))
-                    c = c1.radio("Contorno", dati['Contorno'].split(', '))
-                    d = c2.radio("Dolce", dati['Dolce'].split(', '))
-                    b = c2.radio("Bevanda", dati['Bevanda'].split(', '))
-                    if st.form_submit_button("Invia"):
-                        df_o = pd.read_csv(ORDINI_FILE)
-                        df_o = df_o[~((df_o['Giorno'] == g_scelto) & (df_o['User'] == st.session_state.user))]
-                        new = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d"), g_scelto, st.session_state.user, get_iniziali(st.session_state.user), f"{p}|{c}|{d}|{b}"]], columns=df_o.columns)
-                        pd.concat([df_o, new]).to_csv(ORDINI_FILE, index=False)
-                        st.success("Ordine salvato!")
+                    p = c1.selectbox("Principale", dati['Principale'].split(','))
+                    c = c1.selectbox("Contorno", dati['Contorno'].split(','))
+                    do = c2.selectbox("Dolce", dati['Dolce'].split(','))
+                    b = c2.selectbox("Bevanda", dati['Bevanda'].split(','))
+                    if st.form_submit_button("Ordina"):
+                        o = pd.read_csv(ORDINI_FILE)
+                        o = o[~((o['Giorno'] == g) & (o['User'] == st.session_state.user))]
+                        det = f"{p}|{c}|{do}|{b}"
+                        new = pd.DataFrame([[datetime.now().strftime("%Y-%m-%d"), g, st.session_state.user, get_iniziali(st.session_state.user), det]], columns=o.columns)
+                        pd.concat([o, new]).to_csv(ORDINI_FILE, index=False)
+                        st.success("Fatto!")
+                        link = urllib.parse.quote(f"Ordine {g}: {det}")
+                        st.markdown(f"[📲 WhatsApp Ristorante](https://wa.me/39333000000?text={link})")
 
     # --- TAB ADMIN ---
-    if st.session_state.ruolo == 'Admin':
-        with tabs[1]:
-            st.header("Impostazioni Sistema")
-            settings = pd.read_csv(SETTINGS_FILE)
-            nuova_ora = st.text_input("Orario chiusura automatica (HH:MM)", settings.iloc[0]['chiusura'])
-            sblocco = st.toggle("Sblocco manuale forzato (Ignora orario)", settings.iloc[0]['sblocco_manuale'])
-            if st.button("Salva Impostazioni"):
-                pd.DataFrame([{'chiusura': nuova_ora, 'sblocco_manuale': sblocco}]).to_csv(SETTINGS_FILE, index=False)
-                st.success("Impostazioni aggiornate!")
-            
-            st.divider()
-            st.subheader("Stato Presenze Settimanali")
-            df_o = pd.read_csv(ORDINI_FILE)
-            utenti = u_db[u_db['Ruolo'] == 'User']['User'].tolist()
-            grid = []
-            for u in utenti:
-                f = {'Dipendente': u}
-                for g in ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì']:
-                    f[g] = "✅" if not df_o[(df_o['User'] == u) & (df_o['Giorno'] == g)].empty else "❌"
-                grid.append(f)
-            st.table(pd.DataFrame(grid))
+    with tabs[1]:
+        if st.session_state.ruolo == 'Admin':
+            sd = pd.read_csv(SETTINGS_FILE)
+            if sd.iloc[0]['richiesta_apertura']: st.warning("📢 Richiesta apertura ricevuta!")
+            sd.at[0, 'sblocco_manuale'] = st.toggle("Apri Menu", sd.iloc[0]['sblocco_manuale'])
+            if st.button("Salva e Reset"):
+                sd.at[0, 'richiesta_apertura'] = False
+                sd.to_csv(SETTINGS_FILE, index=False)
+                st.rerun()
 
     # --- TAB RISTORANTE ---
-    idx_rist = 2 if st.session_state.ruolo == 'Admin' else 0
-    if st.session_state.ruolo in ['Admin', 'Ristorante']:
-        with tabs[idx_rist]:
-            st.header("Gestione Cucina")
-            # Modifica Menu
-            with st.expander("Modifica Menu Settimanale"):
-                m_df = pd.read_csv(MENU_FILE)
-                edit_m = st.data_editor(m_df, use_container_width=True, hide_index=True)
-                if st.button("Pubblica Nuovo Menu"):
-                    edit_m.to_csv(MENU_FILE, index=False)
-                    st.success("Menu aggiornato!")
-
-            st.divider()
-            # Visualizzazione Ordini
-            g_chef = st.selectbox("Vedi ordini per:", ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì'])
-            df_o = pd.read_csv(ORDINI_FILE)
-            df_g = df_o[df_o['Giorno'] == g_chef]
+    with tabs[2]:
+        if st.session_state.ruolo in ['Admin', 'Ristorante']:
+            st.header("Gestione Menu")
             
-            if df_g.empty: st.info("Nessun ordine.")
-            else:
-                st.subheader(f"Riepilogo {g_chef}")
-                # Logica per contare e raggruppare iniziali
-                for i, cat in enumerate(['Principale', 'Contorno', 'Dolce', 'Bevanda']):
-                    st.write(f"**{cat}**")
-                    choices = df_g['Dettaglio'].apply(lambda x: x.split('|')[i])
-                    summary = []
-                    for piatto in choices.unique():
-                        inits = df_g[df_g['Dettaglio'].apply(lambda x: x.split('|')[i] == piatto)]['Iniziali'].tolist()
-                        summary.append({'Piatto': piatto, 'Totale': len(inits), 'Chi': ", ".join(inits)})
-                    st.table(pd.DataFrame(summary))
+            # OPZIONE 1: CARICAMENTO FILE
+            with st.expander("📂 Carica Menu da Excel/CSV"):
+                uploaded = st.file_uploader("Scegli un file (Colonne: Giorno, Principale, Contorno, Dolce, Bevanda)", type=['csv', 'xlsx'])
+                if uploaded:
+                    try:
+                        new_m = pd.read_excel(uploaded) if uploaded.name.endswith('xlsx') else pd.read_csv(uploaded)
+                        if st.button("Conferma Caricamento File"):
+                            new_m.to_csv(MENU_FILE, index=False)
+                            st.success("Menu caricato da file!")
+                            invia_email_menu("Nuovo menu settimanale caricato da file Excel.")
+                    except: st.error("Errore nel formato del file.")
+
+            # OPZIONE 2: INSERIMENTO MANUALE
+            with st.expander("✍️ Inserimento Manuale"):
+                m_df = pd.read_csv(MENU_FILE)
+                with st.form("manual"):
+                    g_ed = st.selectbox("Giorno", m_df['Giorno'].tolist())
+                    c1, c2 = st.columns(2)
+                    p_n = c1.text_area("Principali (virgola per separare)")
+                    c_n = c1.text_area("Contorni")
+                    d_n = c2.text_area("Dolci")
+                    b_n = c2.text_area("Bevande")
+                    if st.form_submit_button("Aggiorna e Invia Mail"):
+                        m_df.loc[m_df['Giorno'] == g_ed, ['Principale','Contorno','Dolce','Bevanda']] = [p_n, c_n, d_n, b_n]
+                        m_df.to_csv(MENU_FILE, index=False)
+                        invia_email_menu(f"Aggiornamento {g_ed}: {p_n}")
+
+            # RIEPILOGO CHEF
+            st.divider()
+            o_df = pd.read_csv(ORDINI_FILE)
+            g_v = st.selectbox("Vedi per:", ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì'])
+            dg = o_df[o_df['Giorno'] == g_v]
+            if not dg.empty:
+                st.write(f"Totali per {g_v}:")
+                choices = dg['Dettaglio'].apply(lambda x: x.split('|')[0])
+                st.write(choices.value_counts())
+                st.dataframe(dg[['Iniziali', 'Dettaglio']])
